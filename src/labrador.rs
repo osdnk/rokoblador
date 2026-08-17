@@ -1,9 +1,10 @@
 use std::ffi::c_void;
 use std::os::raw::c_int;
+use std::sync::Once;
 
 use crate::export::{Statement, Witness, INNER_FLAG, ROLE_W};
 
-const WITNESS_COEFF_MAX: i64 = 23170;
+const WITNESS_COEFF_MAX: u64 = 23170;
 
 extern "C" {
     fn labrador50_init_comkey(n: usize);
@@ -49,10 +50,16 @@ pub fn precomputed_len_for_rank(total_rank: usize) -> usize {
     scaled.div_ceil(32) * 32
 }
 
+static COMKEY_ONCE: Once = Once::new();
+
+pub fn ensure_comkey(precomputed_len: usize) {
+    COMKEY_ONCE.call_once(|| unsafe { labrador50_init_comkey(precomputed_len) });
+}
+
 pub fn warm_comkey(precomputed_len: usize) -> std::thread::JoinHandle<std::time::Duration> {
     std::thread::spawn(move || {
         let start = std::time::Instant::now();
-        unsafe { labrador50_init_comkey(precomputed_len) };
+        ensure_comkey(precomputed_len);
         start.elapsed()
     })
 }
@@ -131,9 +138,9 @@ fn check_statement(stmt: &Statement) -> Result<(), String> {
     let mut inner_sum: u128 = 0;
     for v in &stmt.vectors {
         if v.role == ROLE_W {
-            role0_sum += v.betasq as u128;
+            role0_sum = role0_sum.checked_add(v.betasq as u128).ok_or("role-0 betasq sum overflowed u128")?;
             if v.flags & INNER_FLAG != 0 {
-                inner_sum += v.betasq as u128;
+                inner_sum = inner_sum.checked_add(v.betasq as u128).ok_or("INNER betasq sum overflowed u128")?;
             }
         }
     }
@@ -144,11 +151,29 @@ fn check_statement(stmt: &Statement) -> Result<(), String> {
         return Err("sum betasq (INNER) exceeds betasq_inner_total".into());
     }
     for (ci, c) in stmt.constraints.iter().enumerate() {
-        if c.idx.is_empty() || c.idx.len() > 64 {
-            return Err(format!("constraint {ci}: nz {} out of range", c.idx.len()));
+        let nz = c.idx.len();
+        if c.off.len() != nz || c.len.len() != nz {
+            return Err(format!("constraint {ci}: idx/off/len length mismatch ({nz}/{}/{})", c.off.len(), c.len.len()));
+        }
+        if nz == 0 || nz > 64 {
+            return Err(format!("constraint {ci}: nz {nz} out of range"));
+        }
+        let phi_len_expected: usize = c.len.iter().sum();
+        if c.phi.len() != phi_len_expected {
+            return Err(format!("constraint {ci}: phi length {} does not match \u{3a3}len {phi_len_expected}", c.phi.len()));
+        }
+        for el in &c.phi {
+            if el.iter().any(|&x| x >= q) {
+                return Err(format!("constraint {ci}: phi coefficient not canonical mod q"));
+            }
+        }
+        if let Some(b) = &c.b {
+            if b.iter().any(|&x| x >= q) {
+                return Err(format!("constraint {ci}: b coefficient not canonical mod q"));
+            }
         }
         let mut prev: Option<(usize, usize)> = None;
-        for j in 0..c.idx.len() {
+        for j in 0..nz {
             let vi = c.idx[j];
             if vi >= stmt.vectors.len() {
                 return Err(format!("constraint {ci}: block {j} idx {vi} out of range"));
@@ -161,7 +186,10 @@ fn check_statement(stmt: &Statement) -> Result<(), String> {
                     return Err(format!("constraint {ci}: block {j} offset not strictly increasing"));
                 }
             }
-            if c.off[j] + c.len[j] > stmt.vectors[vi].n {
+            let end = c.off[j]
+                .checked_add(c.len[j])
+                .ok_or_else(|| format!("constraint {ci}: block {j} off+len overflowed usize"))?;
+            if end > stmt.vectors[vi].n {
                 return Err(format!("constraint {ci}: block {j} off+len exceeds vector {vi} rank"));
             }
             prev = Some((vi, c.off[j]));
@@ -175,12 +203,14 @@ fn check_witness(stmt: &Statement, wit: &Witness) -> Result<(), String> {
         return Err("statement/witness vector count mismatch".into());
     }
     for (i, (v, coeffs)) in stmt.vectors.iter().zip(wit.vectors.iter()).enumerate() {
-        if coeffs.len() != v.n * 64 {
+        let expected_len = v.n.checked_mul(64).ok_or_else(|| format!("vector {i}: n*64 overflowed usize"))?;
+        if coeffs.len() != expected_len {
             return Err(format!("vector {i}: witness coefficient count mismatch"));
         }
         for &c in coeffs {
-            if c.abs() > WITNESS_COEFF_MAX {
-                return Err(format!("vector {i}: |coeff| = {} exceeds {WITNESS_COEFF_MAX}", c.abs()));
+            let mag = c.unsigned_abs();
+            if mag > WITNESS_COEFF_MAX {
+                return Err(format!("vector {i}: |coeff| = {mag} exceeds {WITNESS_COEFF_MAX}"));
             }
         }
     }

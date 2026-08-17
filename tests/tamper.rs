@@ -5,6 +5,8 @@ use rokoblador::{driver, export, labrador};
 fn build_models() -> (export::Statement, export::Witness) {
     rokoko::common::init_common();
     let cut = NonZeroUsize::new(3).unwrap();
+    let precomputed_len = labrador::precomputed_len_for_rank(export::estimate_total_rank(3));
+    labrador::ensure_comkey(precomputed_len);
     let mut setup = driver::setup();
     let mut prove_output = driver::prove(&mut setup, cut);
     export::export_prover(3, &mut prove_output.prover_boundary, setup.crs())
@@ -78,5 +80,7 @@ fn tamper_suite() {
         let mut s = stmt.clone();
         s.digest[0] ^= 0xFF;
         assert_ne!(s, stmt, "t5: a digest-tampered statement must differ from the prover's model");
+        let err = labrador::verify(&s, &handle).expect_err("t5: digest-tampered statement must fail to verify against the honest proof");
+        assert!(err.contains("composite_verify_simple"), "t5: unexpected error: {err}");
     }
 }

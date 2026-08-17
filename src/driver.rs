@@ -1,8 +1,7 @@
 use std::num::NonZeroUsize;
 
-use rokoko::common::ring_arithmetic::RingElement;
-use rokoko::protocol::boundary::{ProverBoundary, VerifierBoundary};
-use rokoko::protocol::config::{Config, SumcheckConfig, SumcheckRoundProof, CONFIG};
+use rokoko::protocol::boundary::{BoundaryCapture, ProverBoundary, VerifierBoundary};
+use rokoko::protocol::config::{Config, SumcheckConfig, CONFIG};
 use rokoko::protocol::crs::{VerifierCRS, CRS};
 use rokoko::protocol::evaluation_point_sampler::{sample_initial_evaluation_points, InitialEvaluationPoints};
 use rokoko::protocol::parties::commiter::commit;
@@ -12,6 +11,8 @@ use rokoko::protocol::params::{decompose_witness, witness_sampler, WITNESS_CONFI
 use rokoko::protocol::sumcheck::{init_sumcheck, SumcheckContext};
 use rokoko::protocol::sumchecks::builder_verifier::init_verifier;
 use rokoko::protocol::sumchecks::context_verifier::VerifierSumcheckContext;
+
+use crate::proof::RokokoHandoff;
 
 pub struct Setup {
     config: &'static SumcheckConfig,
@@ -59,9 +60,7 @@ pub fn setup() -> Setup {
 }
 
 pub struct ProveOutput {
-    pub rc_commitment: Vec<RingElement>,
-    pub proof: SumcheckRoundProof,
-    pub claims: Vec<RingElement>,
+    pub handoff: RokokoHandoff,
     pub prover_boundary: ProverBoundary,
 }
 
@@ -81,28 +80,29 @@ pub fn prove(setup: &mut Setup, cut: NonZeroUsize) -> ProveOutput {
         &mut setup.sumcheck_context,
         true,
         None,
-        Some(cut),
-        Some(&mut prover_boundary),
+        Some(BoundaryCapture { cut, slot: &mut prover_boundary }),
     );
     let claims = claims.expect("prover_round must return claims when with_claims is true");
     let prover_boundary = prover_boundary.expect("round boundary cut must populate the prover boundary");
-    ProveOutput { rc_commitment, proof, claims, prover_boundary }
+    ProveOutput {
+        handoff: RokokoHandoff { rc_commitment, proof, claims },
+        prover_boundary,
+    }
 }
 
-pub fn verify(setup: &mut Setup, cut: NonZeroUsize, prove_output: &ProveOutput) -> VerifierBoundary {
+pub fn verify(setup: &mut Setup, cut: NonZeroUsize, handoff: &RokokoHandoff) -> VerifierBoundary {
     let mut verifier_boundary = None;
     verifier_round(
         &setup.verifier_crs,
         setup.config,
-        &prove_output.rc_commitment,
-        &prove_output.proof,
+        &handoff.rc_commitment,
+        &handoff.proof,
         &setup.evaluation_points.inner,
         &setup.evaluation_points.outer,
-        &prove_output.claims,
+        &handoff.claims,
         &mut setup.sumcheck_context_verifier,
         None,
-        Some(cut),
-        Some(&mut verifier_boundary),
+        Some(BoundaryCapture { cut, slot: &mut verifier_boundary }),
     );
     verifier_boundary.expect("round boundary cut must populate the verifier boundary")
 }

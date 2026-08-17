@@ -13,7 +13,7 @@ use crate::r64;
 pub const ROLE_W: u32 = 0;
 pub const INNER_FLAG: u32 = 1;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VectorDesc {
     pub n: usize,
     pub betasq: u64,
@@ -21,7 +21,7 @@ pub struct VectorDesc {
     pub flags: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Constraint {
     pub idx: Vec<usize>,
     pub off: Vec<usize>,
@@ -30,7 +30,7 @@ pub struct Constraint {
     pub phi: Vec<r64::R64>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Statement {
     pub q: u64,
     pub digest: [u8; 16],
@@ -40,9 +40,13 @@ pub struct Statement {
     pub constraints: Vec<Constraint>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Witness {
     pub vectors: Vec<Vec<i64>>,
+}
+
+fn u64_from_u128(x: u128, what: &str) -> u64 {
+    u64::try_from(x).unwrap_or_else(|_| panic!("{what} overflowed u64: {x}"))
 }
 
 fn round_config(cut: usize) -> &'static SumcheckConfig {
@@ -143,24 +147,20 @@ fn compute_layout(round_cfg: &SumcheckConfig, shape: &ChainShape) -> Layout {
     let ranges = most_inner_ranges(round_cfg);
     let is_inner = |g: usize| ranges.iter().any(|&(s, e)| g >= s && g < e);
 
-    let mut inner_start: Option<usize> = None;
-    let mut inner_end: Option<usize> = None;
-    let mut pos = 0usize;
-    while pos < total {
-        let inner = is_inner(pos);
-        let mut end = pos + 1;
-        while end < total && is_inner(end) == inner {
-            end += 1;
-        }
-        if inner {
-            inner_start = Some(inner_start.map_or(pos, |s| s.min(pos)));
-            inner_end = Some(inner_end.map_or(end, |e| e.max(end)));
-        }
-        pos = end;
-    }
-    let (v0_start, v0_end) = match (inner_start, inner_end) {
-        (Some(s), Some(e)) => (s, e),
-        _ => (0, total / 2),
+    let inner_positions: Vec<usize> = (0..total).filter(|&g| is_inner(g)).collect();
+    let (v0_start, v0_end) = if inner_positions.is_empty() {
+        (0, total / 2)
+    } else {
+        let start = inner_positions[0];
+        let end = *inner_positions.last().unwrap() + 1;
+        assert_eq!(
+            inner_positions.len(),
+            end - start,
+            "most-inner ranges are not contiguous: {} inner positions span [{start},{end}) \
+             which would silently include non-inner gaps as inner",
+            inner_positions.len(),
+        );
+        (start, end)
     };
 
     let w_before_len = 2 * v0_start;
@@ -403,7 +403,7 @@ fn w_range_witness(w: &VerticallyAlignedMatrix<RingElement>, start: usize, end: 
             coeffs.push(s);
         }
     }
-    (coeffs, betasq as u64)
+    (coeffs, u64_from_u128(betasq, "w-range betasq"))
 }
 
 fn ydec_witness(rc: &RecursiveCommitmentWithAux, shape: &ChainShape) -> (Vec<i64>, u64) {
@@ -422,7 +422,7 @@ fn ydec_witness(rc: &RecursiveCommitmentWithAux, shape: &ChainShape) -> (Vec<i64
             }
         }
     }
-    (coeffs, betasq as u64)
+    (coeffs, u64_from_u128(betasq, "ydec betasq"))
 }
 
 fn c1dec_witness(rc_inner: &RecursiveCommitmentWithAux, shape: &ChainShape) -> (Vec<i64>, u64) {
@@ -439,7 +439,7 @@ fn c1dec_witness(rc_inner: &RecursiveCommitmentWithAux, shape: &ChainShape) -> (
             }
         }
     }
-    (coeffs, betasq as u64)
+    (coeffs, u64_from_u128(betasq, "c1dec betasq"))
 }
 
 fn caps(shape: &ChainShape, a2_base_log: usize, a3_base_log: usize, layout: &Layout) -> u128 {
@@ -448,9 +448,79 @@ fn caps(shape: &ChainShape, a2_base_log: usize, a3_base_log: usize, layout: &Lay
     ydec_cap + c1dec_cap
 }
 
-pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (Statement, Witness) {
+fn encode_shape(buf: &mut Vec<u8>, q: u64, vectors: &[VectorDesc], betasq_w_total: u64, betasq_inner_total: u64, constraints: &[Constraint]) {
+    buf.extend_from_slice(&q.to_le_bytes());
+    buf.extend_from_slice(&(vectors.len() as u64).to_le_bytes());
+    for v in vectors {
+        buf.extend_from_slice(&(v.n as u64).to_le_bytes());
+        buf.extend_from_slice(&v.betasq.to_le_bytes());
+        buf.extend_from_slice(&v.role.to_le_bytes());
+        buf.extend_from_slice(&v.flags.to_le_bytes());
+    }
+    buf.extend_from_slice(&betasq_w_total.to_le_bytes());
+    buf.extend_from_slice(&betasq_inner_total.to_le_bytes());
+    buf.extend_from_slice(&(constraints.len() as u64).to_le_bytes());
+    for c in constraints {
+        buf.extend_from_slice(&(c.idx.len() as u64).to_le_bytes());
+        for &x in &c.idx {
+            buf.extend_from_slice(&(x as u64).to_le_bytes());
+        }
+        for &x in &c.off {
+            buf.extend_from_slice(&(x as u64).to_le_bytes());
+        }
+        for &x in &c.len {
+            buf.extend_from_slice(&(x as u64).to_le_bytes());
+        }
+        buf.push(c.b.is_some() as u8);
+    }
+}
+
+fn compute_digest(
+    transcript_xof16: &[u8; 16],
+    q: u64,
+    vectors: &[VectorDesc],
+    betasq_w_total: u64,
+    betasq_inner_total: u64,
+    constraints: &[Constraint],
+) -> [u8; 16] {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(transcript_xof16);
+    encode_shape(&mut buf, q, vectors, betasq_w_total, betasq_inner_total, constraints);
+    let hash = blake3::hash(&buf);
     let mut digest = [0u8; 16];
-    boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut digest);
+    digest.copy_from_slice(&hash.as_bytes()[..16]);
+    digest
+}
+
+pub fn fingerprint(stmt: &Statement, wit: &Witness) -> [u8; 32] {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&stmt.digest);
+    encode_shape(&mut buf, stmt.q, &stmt.vectors, stmt.betasq_w_total, stmt.betasq_inner_total, &stmt.constraints);
+    for c in &stmt.constraints {
+        if let Some(b) = &c.b {
+            for &x in b {
+                buf.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+        for el in &c.phi {
+            for &x in el {
+                buf.extend_from_slice(&x.to_le_bytes());
+            }
+        }
+    }
+    buf.extend_from_slice(&(wit.vectors.len() as u64).to_le_bytes());
+    for v in &wit.vectors {
+        buf.extend_from_slice(&(v.len() as u64).to_le_bytes());
+        for &x in v {
+            buf.extend_from_slice(&x.to_le_bytes());
+        }
+    }
+    *blake3::hash(&buf).as_bytes()
+}
+
+pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (Statement, Witness) {
+    let mut transcript_xof16 = [0u8; 16];
+    boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut transcript_xof16);
 
     let nc = &boundary.config;
     let round_cfg = round_config(cut);
@@ -482,8 +552,11 @@ pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (S
     let constraints = build_public(&layout, &shape, &a1, &a2, &a3, a2_cfg.decomposition_base_log, a3_base_log, &inner0, &outer0, &inner1, &outer1, &c_eo_vec, z0_eo, z1_eo);
     let specs = vector_specs(&layout);
 
-    let betasq_w_total = (round_cfg.norm_bound.powi(2).floor() as u128 + caps(&shape, a2_cfg.decomposition_base_log, a3_base_log, &layout)) as u64;
-    let betasq_inner_total = round_cfg.most_inner_norm_bound.powi(2).floor() as u64;
+    let betasq_w_total = u64_from_u128(
+        round_cfg.norm_bound.powi(2).floor() as u128 + caps(&shape, a2_cfg.decomposition_base_log, a3_base_log, &layout),
+        "betasq_w_total",
+    );
+    let betasq_inner_total = u64_from_u128(round_cfg.most_inner_norm_bound.powi(2).floor() as u128, "betasq_inner_total");
 
     let (v0_coeffs, v0_honest) = w_range_witness(&boundary.witness, layout.v0_start, layout.v0_end);
     let (wb_coeffs, wb_honest) = w_range_witness(&boundary.witness, 0, layout.v0_start);
@@ -493,8 +566,8 @@ pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (S
 
     let v1_honest = wb_honest as u128 + wa_honest as u128 + yd_honest as u128 + c1_honest as u128;
 
-    let v0_betasq = (v0_honest as u128).max(1) as u64;
-    let v1_betasq = v1_honest.max(1) as u64;
+    let v0_betasq = u64_from_u128((v0_honest as u128).max(1), "v0_betasq");
+    let v1_betasq = u64_from_u128(v1_honest.max(1), "v1_betasq");
 
     let mut v1_coeffs = Vec::with_capacity(wb_coeffs.len() + wa_coeffs.len() + yd_coeffs.len() + c1_coeffs.len());
     v1_coeffs.extend(wb_coeffs);
@@ -511,6 +584,7 @@ pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (S
     assert!(v0_betasq as u128 <= betasq_inner_total as u128, "B0 exceeds betasq_inner_total");
     assert!(v0_betasq as u128 + v1_betasq as u128 <= betasq_w_total as u128, "B0+B1 exceeds betasq_w_total");
 
+    let digest = compute_digest(&transcript_xof16, MOD_Q, &vectors, betasq_w_total, betasq_inner_total, &constraints);
     let stmt = Statement { q: MOD_Q, digest, betasq_w_total, betasq_inner_total, vectors, constraints };
 
     self_check(&stmt, &witness).expect("EXPORT SELF-CHECK failed");
@@ -556,8 +630,8 @@ fn self_check(stmt: &Statement, wit: &Witness) -> Result<(), String> {
 }
 
 pub fn export_verifier(cut: usize, boundary: &mut VerifierBoundary, crs: &VerifierCRS, prover_betasq: &[u64]) -> Statement {
-    let mut digest = [0u8; 16];
-    boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut digest);
+    let mut transcript_xof16 = [0u8; 16];
+    boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut transcript_xof16);
 
     let nc = &boundary.config;
     let round_cfg = round_config(cut);
@@ -586,8 +660,11 @@ pub fn export_verifier(cut: usize, boundary: &mut VerifierBoundary, crs: &Verifi
     let constraints = build_public(&layout, &shape, &a1, &a2, &a3, a2_cfg.decomposition_base_log, a3_base_log, &inner0, &outer0, &inner1, &outer1, &c_eo_vec, z0_eo, z1_eo);
     let specs = vector_specs(&layout);
 
-    let betasq_w_total = (round_cfg.norm_bound.powi(2).floor() as u128 + caps(&shape, a2_cfg.decomposition_base_log, a3_base_log, &layout)) as u64;
-    let betasq_inner_total = round_cfg.most_inner_norm_bound.powi(2).floor() as u64;
+    let betasq_w_total = u64_from_u128(
+        round_cfg.norm_bound.powi(2).floor() as u128 + caps(&shape, a2_cfg.decomposition_base_log, a3_base_log, &layout),
+        "betasq_w_total",
+    );
+    let betasq_inner_total = u64_from_u128(round_cfg.most_inner_norm_bound.powi(2).floor() as u128, "betasq_inner_total");
 
     assert_eq!(prover_betasq.len(), 2, "verifier-derived vector count differs from the transmitted betasq claims");
     let vectors = vec![
@@ -595,5 +672,6 @@ pub fn export_verifier(cut: usize, boundary: &mut VerifierBoundary, crs: &Verifi
         VectorDesc { n: specs[1].n, betasq: prover_betasq[1], role: specs[1].role, flags: specs[1].flags },
     ];
 
+    let digest = compute_digest(&transcript_xof16, MOD_Q, &vectors, betasq_w_total, betasq_inner_total, &constraints);
     Statement { q: MOD_Q, digest, betasq_w_total, betasq_inner_total, vectors, constraints }
 }

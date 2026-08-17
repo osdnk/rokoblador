@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 rokoko = { path = "../rokoko" }
+blake3 = "1.5.1"
 
 [profile.release]
 opt-level = 3
