@@ -30,8 +30,8 @@ void rb_free(void *p) {
   free(p);
 }
 
-void rb_smplstmnt_set_digest(void *stp, const uint8_t digest[16]) {
-  memcpy(((smplstmnt *)stp)->h, digest, 16);
+void rb_smplstmnt_set_digest(void *stp, const uint8_t digest[32]) {
+  shake128(((smplstmnt *)stp)->h, 16, digest, 32);
 }
 
 void rb_smplstmnt_add_constraint(void *stp, size_t ci, size_t nz, const size_t *idx,

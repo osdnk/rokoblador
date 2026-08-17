@@ -10,7 +10,7 @@ void *rb_alloc_composite(void);
 void *rb_alloc_commitment(void);
 void rb_free(void *p);
 
-void rb_smplstmnt_set_digest(void *st, const uint8_t digest[16]);
+void rb_smplstmnt_set_digest(void *st, const uint8_t digest[32]);
 void rb_smplstmnt_add_constraint(void *st, size_t ci, size_t nz, const size_t *idx,
                                   const size_t *off, const size_t *len,
                                   const int64_t *b, const int64_t *phi);

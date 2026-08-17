@@ -229,7 +229,7 @@ fn build_raw_statement(stmt: &Statement) -> Result<RawStatement, String> {
     if ret != 0 {
         return Err(format!("init_smplstmnt_raw failed with code {ret}"));
     }
-    unsafe { rb_smplstmnt_set_digest(raw.0, stmt.digest[..16].as_ptr()) };
+    unsafe { rb_smplstmnt_set_digest(raw.0, stmt.digest.as_ptr()) };
     for (ci, c) in stmt.constraints.iter().enumerate() {
         let phi_flat: Vec<i64> = c.phi.iter().flatten().map(|&x| x as i64).collect();
         let b_flat: Option<Vec<i64>> = c.b.map(|b| b.iter().map(|&x| x as i64).collect());
