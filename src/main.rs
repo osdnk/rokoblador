@@ -87,7 +87,7 @@ fn main() {
         eprintln!("STATEMENT MATCH FAILED: prover and verifier models differ");
         std::process::exit(1);
     }
-    println!("STATEMENT MATCH OK (in-memory)");
+    println!("STATEMENT MATCH OK");
     let derive_s = t_derive.elapsed().as_secs_f64();
 
     let t_lab_verify = Instant::now();
