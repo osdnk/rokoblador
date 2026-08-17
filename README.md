@@ -24,11 +24,11 @@ itself is needed. Override the labrador checkout with
 
 Run the protocol:
 
-    cargo +nightly run --release -- --cut 3
+    cargo +nightly run --release
 
 Run the tamper suite (each case mutates the statement or witness and must
 be rejected):
 
     cargo +nightly test --release --test tamper
 
-`--cut K` (default 3) picks the round of the `rokoko` chain to cut at.
+`--cut K` (default 4) picks the round of the `rokoko` chain to cut at.

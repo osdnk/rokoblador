@@ -89,7 +89,7 @@ fn run(cut: usize) -> Result<(), String> {
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let mut cut: usize = 3;
+    let mut cut: usize = 4;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
