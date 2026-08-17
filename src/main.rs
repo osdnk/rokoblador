@@ -35,8 +35,14 @@ fn run(cut: usize, self_check_enabled: bool, fingerprint_enabled: bool) -> Resul
         .as_secs_f64();
     println!("setup: rokoko {rokoko_setup_s:.3} s \u{2225} labrador {labrador_setup_s:.3} s");
 
+    let t_sample = Instant::now();
+    let witness_decomposed = driver::sample();
+    let sample_s = t_sample.elapsed().as_secs_f64();
+    let t_commit = Instant::now();
+    let (commitment_with_aux, rc_commitment) = driver::commit_witness(&setup, &witness_decomposed);
+    let commit_s = t_commit.elapsed().as_secs_f64();
     let t_prove = Instant::now();
-    let mut prove_output = driver::prove(&mut setup, cut_nz);
+    let mut prove_output = driver::prove(&mut setup, &witness_decomposed, &commitment_with_aux, rc_commitment, cut_nz);
     let rokoko_prove_s = t_prove.elapsed().as_secs_f64();
 
     let t_export = Instant::now();
@@ -49,7 +55,7 @@ fn run(cut: usize, self_check_enabled: bool, fingerprint_enabled: bool) -> Resul
     let (handle, pack_kb) = labrador::prove(&stmt, &wit)?;
     let lab_prove_s = t_lab_prove.elapsed().as_secs_f64();
 
-    println!("PROVE phase: rokoko {rokoko_prove_s:.3} s + export {export_s:.3} s + labrador {lab_prove_s:.3} s");
+    println!("PROVE phase: sample {sample_s:.3} s + commit {commit_s:.3} s + rounds {rokoko_prove_s:.3} s + export {export_s:.3} s + labrador {lab_prove_s:.3} s");
     println!("Truncated rokoko proof size: {truncated_kb} KB");
     println!("COMBINED proof size: {truncated_kb} + {pack_kb} = {} KB", truncated_kb + pack_kb);
     if fingerprint_enabled {

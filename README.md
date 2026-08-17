@@ -33,16 +33,19 @@ be rejected):
 
     cargo +nightly test --release --test tamper
 
-Measured on an i7-11850H, default parameters (prover includes witness
-sampling, commitment, and all proving on both sides; run-to-run noise ~0.2 s):
+Measured on an i7-11850H, default parameters. Prover = round-chain proving
+plus, for the cuts, statement translation and LaBRADOR proving:
 
 | | prover | verifier | proof |
 |---|---|---|---|
-| plain rokoko | ~10.0 s | 0.007 s | 157.3 KB |
-| cut k=3 | 10.3 s | 0.54 s | 90.7 KB |
-| cut k=4 | 10.0 s | 0.28 s | 97.1 KB |
-| cut k=5 (default) | 9.8 s | 0.11 s | 103.6 KB |
-| cut k=6 | 9.9 s | 0.07 s | 113.0 KB |
+| plain rokoko | 2.9 s | 0.007 s | 157.3 KB |
+| cut k=3 | 3.3 s | 0.54 s | 90.7 KB |
+| cut k=4 | 3.0 s | 0.28 s | 97.1 KB |
+| cut k=5 (default) | 2.8 s | 0.11 s | 103.6 KB |
+| cut k=6 | 2.8 s | 0.07 s | 113.0 KB |
+
+Every row additionally pays the same witness commitment (~3.3 s) before
+proving; it is identical across all configurations and not counted above.
 
 `--cut K` (default 5) picks the round of the `rokoko` chain to cut at.
 `--self-check` re-enables the R64 reference re-evaluation of every

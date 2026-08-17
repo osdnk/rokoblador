@@ -8,6 +8,9 @@ use rokoko::protocol::parties::commiter::commit;
 use rokoko::protocol::parties::prover::prover_round;
 use rokoko::protocol::parties::verifier::verifier_round;
 use rokoko::protocol::params::{decompose_witness, witness_sampler, WITNESS_CONFIG};
+use rokoko::common::matrix::VerticallyAlignedMatrix;
+use rokoko::common::ring_arithmetic::RingElement;
+use rokoko::protocol::commitment::CommitmentWithAux;
 use rokoko::protocol::sumcheck::{init_sumcheck, SumcheckContext};
 use rokoko::protocol::sumchecks::builder_verifier::init_verifier;
 use rokoko::protocol::sumchecks::context_verifier::VerifierSumcheckContext;
@@ -64,17 +67,30 @@ pub struct ProveOutput {
     pub prover_boundary: ProverBoundary,
 }
 
-pub fn prove(setup: &mut Setup, cut: NonZeroUsize) -> ProveOutput {
-    let witness = witness_sampler();
-    let witness_decomposed = decompose_witness(&witness);
-    let (commitment_with_aux, rc_commitment) = commit(&setup.crs, setup.config, &witness_decomposed);
+pub fn sample() -> VerticallyAlignedMatrix<RingElement> {
+    decompose_witness(&witness_sampler())
+}
 
+pub fn commit_witness(
+    setup: &Setup,
+    witness_decomposed: &VerticallyAlignedMatrix<RingElement>,
+) -> (CommitmentWithAux, Vec<RingElement>) {
+    commit(&setup.crs, setup.config, witness_decomposed)
+}
+
+pub fn prove(
+    setup: &mut Setup,
+    witness_decomposed: &VerticallyAlignedMatrix<RingElement>,
+    commitment_with_aux: &CommitmentWithAux,
+    rc_commitment: Vec<RingElement>,
+    cut: NonZeroUsize,
+) -> ProveOutput {
     let mut prover_boundary = None;
     let (proof, claims) = prover_round(
         &setup.crs,
         setup.config,
-        &commitment_with_aux,
-        &witness_decomposed,
+        commitment_with_aux,
+        witness_decomposed,
         &setup.evaluation_points.inner,
         &setup.evaluation_points.outer,
         &mut setup.sumcheck_context,
