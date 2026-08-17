@@ -7,7 +7,7 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
     let labrador_dir = env::var("ROKOBLADOR_LABRADOR_DIR")
-        .unwrap_or_else(|_| format!("{manifest_dir}/../labrador"));
+        .unwrap_or_else(|_| format!("{manifest_dir}/labrador"));
     println!("cargo:rerun-if-env-changed=ROKOBLADOR_LABRADOR_DIR");
 
     let libobj_dir = format!("{labrador_dir}/libobj");

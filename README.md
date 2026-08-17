@@ -9,9 +9,18 @@ statement independently from public data, checks it matches the prover's,
 and verifies the LaBRADOR proof against it. LaBRADOR's commitment-key
 expansion runs concurrently with `rokoko`'s setup.
 
-Requirements: `cargo +nightly`, an x86_64 host with AVX-512, and `rokoko`
-and `labrador` checked out as sibling directories of this crate (override
-the labrador path with `ROKOBLADOR_LABRADOR_DIR`).
+Requirements: `cargo +nightly` and an x86_64 host with AVX-512. `rokoko` and
+`labrador` are git submodules; clone with:
+
+    git clone --recursive https://github.com/osdnk/rokoblador
+
+(or `git submodule update --init` after a plain clone). `rokoko` carries its
+own nested submodules (Intel HEXL, the lattice estimator) for optional,
+non-default build paths; the default build here uses `rokoko`'s pure-Rust
+`incomplete-rexl` path and never touches them, so a plain first-level
+`--recursive`/`--init` is enough — no `--recursive` chained into `rokoko`
+itself is needed. Override the labrador checkout with
+`ROKOBLADOR_LABRADOR_DIR` if you want to point at a different one.
 
 Run the protocol:
 
