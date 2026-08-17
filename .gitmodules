@@ -1,7 +1,7 @@
 [submodule "rokoko"]
 	path = rokoko
 	url = https://github.com/lattice-arguments/rokoko
-	branch = round-boundary
+	branch = main
 [submodule "labrador"]
 	path = labrador
 	url = https://github.com/osdnk/labrador
