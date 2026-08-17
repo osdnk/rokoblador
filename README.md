@@ -48,7 +48,8 @@ Every row additionally pays the same witness commitment (~3.3 s) before
 proving; it is identical across all configurations and not counted above.
 
 `--cut K` (default 5) picks the round of the `rokoko` chain to cut at.
-`--self-check` re-enables the R64 reference re-evaluation of every
-constraint (off by default; the tamper/integration tests always run with it).
+`--self-check` evaluates every constraint against the witness in reference
+R64 arithmetic before proving (off by default; the tamper/integration tests
+always run with it).
 `--fingerprint` prints a blake3 fingerprint of the whole statement and
 witness, for cross-run determinism checks (off by default).
