@@ -38,11 +38,11 @@ plus, for the cuts, statement translation and LaBRADOR proving:
 
 | | prover | verifier | proof |
 |---|---|---|---|
-| plain rokoko | 2.9 s | 0.007 s | 157.3 KB |
-| cut k=3 | 3.3 s | 0.54 s | 90.7 KB |
-| cut k=4 | 3.0 s | 0.28 s | 97.1 KB |
-| cut k=5 (default) | 2.8 s | 0.11 s | 103.6 KB |
-| cut k=6 | 2.8 s | 0.07 s | 113.0 KB |
+| plain rokoko | 2.9 s | 0.007 s | 132.4 KB |
+| cut k=3 | 3.3 s | 0.54 s | 88.0 KB |
+| cut k=4 | 3.0 s | 0.28 s | 93.6 KB |
+| cut k=5 (default) | 2.8 s | 0.11 s | 99.2 KB |
+| cut k=6 | 2.8 s | 0.07 s | 108.0 KB |
 
 Every row additionally pays the same witness commitment (~3.3 s) before
 proving; it is identical across all configurations and not counted above.
