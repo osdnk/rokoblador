@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use rokoko::common::config::MOD_Q;
 use rokoko::common::matrix::VerticallyAlignedMatrix;
 use rokoko::common::ring_arithmetic::{Representation, RingElement};
@@ -12,11 +10,40 @@ use rokoko::protocol::open::{evaluation_point_to_structured_row, evaluation_poin
 
 use crate::r64;
 
-const MAGIC_STMT: u32 = 0x524B_424C;
-const MAGIC_WIT: u32 = 0x524B_4257;
-const VERSION: u32 = 2;
-const INNER_FLAG: u32 = 1;
-const ROLE_W: u32 = 0;
+pub const ROLE_W: u32 = 0;
+pub const INNER_FLAG: u32 = 1;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct VectorDesc {
+    pub n: usize,
+    pub betasq: u64,
+    pub role: u32,
+    pub flags: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Constraint {
+    pub idx: Vec<usize>,
+    pub off: Vec<usize>,
+    pub len: Vec<usize>,
+    pub b: Option<r64::R64>,
+    pub phi: Vec<r64::R64>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Statement {
+    pub q: u64,
+    pub digest: [u8; 16],
+    pub betasq_w_total: u64,
+    pub betasq_inner_total: u64,
+    pub vectors: Vec<VectorDesc>,
+    pub constraints: Vec<Constraint>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Witness {
+    pub vectors: Vec<Vec<i64>>,
+}
 
 fn round_config(cut: usize) -> &'static SumcheckConfig {
     let mut cfg = match &*CONFIG {
@@ -158,6 +185,15 @@ fn vector_specs(layout: &Layout) -> [VectorSpec; 2] {
     ]
 }
 
+pub fn estimate_total_rank(cut: usize) -> usize {
+    let nc = round_config(cut + 1);
+    let round_cfg = round_config(cut);
+    let shape = chain_shape(nc);
+    let layout = compute_layout(round_cfg, &shape);
+    let specs = vector_specs(&layout);
+    specs[0].n + specs[1].n
+}
+
 fn prover_rows_eo(crs: &CRS, dim: usize, rank: usize) -> Vec<Vec<(r64::R64, r64::R64)>> {
     let ck = crs.ck_for_wit_dim(dim);
     (0..rank)
@@ -176,14 +212,6 @@ fn verifier_rows_eo(crs: &VerifierCRS, dim: usize, rank: usize) -> Vec<Vec<(r64:
                 .collect()
         })
         .collect()
-}
-
-struct ConstraintSpec {
-    idx: Vec<usize>,
-    off: Vec<usize>,
-    len: Vec<usize>,
-    b: Option<r64::R64>,
-    phi: Vec<r64::R64>,
 }
 
 fn eval_tensors(evaluation_points: &[RingElement], width: usize) -> (Vec<RingElement>, Vec<RingElement>, Vec<RingElement>, Vec<RingElement>) {
@@ -246,7 +274,7 @@ fn build_public(
     c_eo_vec: &[(r64::R64, r64::R64)],
     z0_eo: (r64::R64, r64::R64),
     z1_eo: (r64::R64, r64::R64),
-) -> Vec<ConstraintSpec> {
+) -> Vec<Constraint> {
     let mut constraints = Vec::new();
     let ydec_base_off = layout.w_before_len + layout.w_after_len;
     let c1dec_base_off = ydec_base_off + layout.ydec_len;
@@ -275,7 +303,7 @@ fn build_public(
                 off.push(ydec_base_off + (col * shape.a1_rank_padded + t) * shape.num_digits_y * 2);
                 len.push(shape.num_digits_y * 2);
                 phi.extend(yblock);
-                constraints.push(ConstraintSpec { idx, off, len, b: None, phi });
+                constraints.push(Constraint { idx, off, len, b: None, phi });
             }
         }
     }
@@ -302,7 +330,7 @@ fn build_public(
                 }
                 let mut phi = yblock;
                 phi.extend(cblock);
-                constraints.push(ConstraintSpec {
+                constraints.push(Constraint {
                     idx: vec![1, 1],
                     off: vec![ydec_base_off, c1dec_base_off + u * shape.num_digits_c1 * 2],
                     len: vec![layout.ydec_len, shape.num_digits_c1 * 2],
@@ -311,7 +339,7 @@ fn build_public(
                 });
             } else {
                 let b = if p == 0 { c_eo_vec[u].0 } else { c_eo_vec[u].1 };
-                constraints.push(ConstraintSpec {
+                constraints.push(Constraint {
                     idx: vec![1],
                     off: vec![ydec_base_off],
                     len: vec![layout.ydec_len],
@@ -332,7 +360,7 @@ fn build_public(
                 block[2 * i + 1] = po;
             }
             let b = if p == 0 { c_eo_vec[0].0 } else { c_eo_vec[0].1 };
-            constraints.push(ConstraintSpec { idx: vec![1], off: vec![c1dec_base_off], len: vec![layout.c1dec_len], b: Some(b), phi: block });
+            constraints.push(Constraint { idx: vec![1], off: vec![c1dec_base_off], len: vec![layout.c1dec_len], b: Some(b), phi: block });
         }
     }
 
@@ -357,202 +385,11 @@ fn build_public(
             push_range_block(&mut idx, &mut off, &mut len, &mut phi, &full, layout, 0, shape.width * shape.height);
             let z = if j == 0 { z0_eo } else { z1_eo };
             let b = if p == 0 { z.0 } else { z.1 };
-            constraints.push(ConstraintSpec { idx, off, len, b: Some(b), phi });
+            constraints.push(Constraint { idx, off, len, b: Some(b), phi });
         }
     }
 
     constraints
-}
-
-struct StatementHeader {
-    q: u64,
-    digest: [u8; 16],
-    betasq_w_total: u64,
-    betasq_inner_total: u64,
-}
-
-struct VectorRecord {
-    n: usize,
-    betasq: u64,
-    role: u32,
-    flags: u32,
-}
-
-struct WitnessVector {
-    n: usize,
-    coeffs: Vec<i64>,
-}
-
-fn put_u32(buf: &mut Vec<u8>, v: u32) {
-    buf.extend_from_slice(&v.to_le_bytes());
-}
-fn put_u64(buf: &mut Vec<u8>, v: u64) {
-    buf.extend_from_slice(&v.to_le_bytes());
-}
-fn put_i64(buf: &mut Vec<u8>, v: i64) {
-    buf.extend_from_slice(&v.to_le_bytes());
-}
-
-fn write_statement(path: &Path, header: &StatementHeader, vectors: &[VectorRecord], constraints: &[ConstraintSpec]) {
-    let mut buf = Vec::new();
-    put_u32(&mut buf, MAGIC_STMT);
-    put_u32(&mut buf, VERSION);
-    put_u64(&mut buf, header.q);
-    buf.extend_from_slice(&header.digest);
-    put_u64(&mut buf, vectors.len() as u64);
-    put_u64(&mut buf, constraints.len() as u64);
-    put_u64(&mut buf, header.betasq_w_total);
-    put_u64(&mut buf, header.betasq_inner_total);
-    for v in vectors {
-        put_u64(&mut buf, v.n as u64);
-        put_u64(&mut buf, v.betasq);
-        put_u32(&mut buf, v.role);
-        put_u32(&mut buf, v.flags);
-    }
-    for c in constraints {
-        put_u64(&mut buf, c.idx.len() as u64);
-        for i in 0..c.idx.len() {
-            put_u64(&mut buf, c.idx[i] as u64);
-            put_u64(&mut buf, c.off[i] as u64);
-            put_u64(&mut buf, c.len[i] as u64);
-        }
-        put_u64(&mut buf, if c.b.is_some() { 1 } else { 0 });
-        if let Some(b) = &c.b {
-            for &x in b {
-                put_i64(&mut buf, x as i64);
-            }
-        }
-        for el in &c.phi {
-            for &x in el {
-                put_i64(&mut buf, x as i64);
-            }
-        }
-    }
-    std::fs::write(path, &buf).unwrap_or_else(|e| panic!("failed to write {path:?}: {e}"));
-}
-
-fn write_witness(path: &Path, q: u64, vectors: &[WitnessVector]) {
-    let mut buf = Vec::new();
-    put_u32(&mut buf, MAGIC_WIT);
-    put_u32(&mut buf, VERSION);
-    put_u64(&mut buf, q);
-    put_u64(&mut buf, vectors.len() as u64);
-    for v in vectors {
-        put_u64(&mut buf, v.n as u64);
-        for &c in &v.coeffs {
-            put_i64(&mut buf, c);
-        }
-    }
-    std::fs::write(path, &buf).unwrap_or_else(|e| panic!("failed to write {path:?}: {e}"));
-}
-
-struct Reader<'a> {
-    data: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(data: &'a [u8]) -> Self {
-        Reader { data, pos: 0 }
-    }
-    fn u32(&mut self) -> u32 {
-        let v = u32::from_le_bytes(self.data[self.pos..self.pos + 4].try_into().unwrap());
-        self.pos += 4;
-        v
-    }
-    fn u64(&mut self) -> u64 {
-        let v = u64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
-        self.pos += 8;
-        v
-    }
-    fn i64(&mut self) -> i64 {
-        let v = i64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
-        self.pos += 8;
-        v
-    }
-    fn bytes(&mut self, n: usize) -> &'a [u8] {
-        let s = &self.data[self.pos..self.pos + n];
-        self.pos += n;
-        s
-    }
-}
-
-struct ParsedStatement {
-    q: u64,
-    betasq_w_total: u64,
-    betasq_inner_total: u64,
-    vectors: Vec<VectorRecord>,
-    constraints: Vec<ConstraintSpec>,
-}
-
-fn read_statement(path: &Path) -> ParsedStatement {
-    let data = std::fs::read(path).unwrap_or_else(|e| panic!("failed to read {path:?}: {e}"));
-    let mut r = Reader::new(&data);
-    assert_eq!(r.u32(), MAGIC_STMT, "bad statement magic in {path:?}");
-    assert_eq!(r.u32(), VERSION, "bad statement version in {path:?}");
-    let q = r.u64();
-    let _digest = r.bytes(16);
-    let nvec = r.u64() as usize;
-    let ncon = r.u64() as usize;
-    let betasq_w_total = r.u64();
-    let betasq_inner_total = r.u64();
-    let mut vectors = Vec::with_capacity(nvec);
-    for _ in 0..nvec {
-        let n = r.u64() as usize;
-        let betasq = r.u64();
-        let role = r.u32();
-        let flags = r.u32();
-        vectors.push(VectorRecord { n, betasq, role, flags });
-    }
-    let mut constraints = Vec::with_capacity(ncon);
-    for _ in 0..ncon {
-        let nz = r.u64() as usize;
-        let mut idx = Vec::with_capacity(nz);
-        let mut off = Vec::with_capacity(nz);
-        let mut len = Vec::with_capacity(nz);
-        for _ in 0..nz {
-            idx.push(r.u64() as usize);
-            off.push(r.u64() as usize);
-            len.push(r.u64() as usize);
-        }
-        let has_b = r.u64();
-        let b = if has_b == 1 {
-            let mut arr = r64::zero();
-            for slot in arr.iter_mut() {
-                *slot = r.i64() as u64;
-            }
-            Some(arr)
-        } else {
-            None
-        };
-        let total: usize = len.iter().sum();
-        let mut phi = Vec::with_capacity(total);
-        for _ in 0..total {
-            let mut arr = r64::zero();
-            for slot in arr.iter_mut() {
-                *slot = r.i64() as u64;
-            }
-            phi.push(arr);
-        }
-        constraints.push(ConstraintSpec { idx, off, len, b, phi });
-    }
-    ParsedStatement { q, betasq_w_total, betasq_inner_total, vectors, constraints }
-}
-
-fn read_witness(path: &Path) -> (u64, Vec<WitnessVector>) {
-    let data = std::fs::read(path).unwrap_or_else(|e| panic!("failed to read {path:?}: {e}"));
-    let mut r = Reader::new(&data);
-    assert_eq!(r.u32(), MAGIC_WIT, "bad witness magic in {path:?}");
-    assert_eq!(r.u32(), VERSION, "bad witness version in {path:?}");
-    let q = r.u64();
-    let nvec = r.u64() as usize;
-    let mut vectors = Vec::with_capacity(nvec);
-    for _ in 0..nvec {
-        let n = r.u64() as usize;
-        let coeffs: Vec<i64> = (0..n * 64).map(|_| r.i64()).collect();
-        vectors.push(WitnessVector { n, coeffs });
-    }
-    (q, vectors)
 }
 
 fn w_range_witness(w: &VerticallyAlignedMatrix<RingElement>, start: usize, end: usize) -> (Vec<i64>, u64) {
@@ -611,9 +448,7 @@ fn caps(shape: &ChainShape, a2_base_log: usize, a3_base_log: usize, layout: &Lay
     ydec_cap + c1dec_cap
 }
 
-pub fn export_prover(dir: &Path, cut: usize, boundary: &mut ProverBoundary, crs: &CRS) {
-    std::fs::create_dir_all(dir).unwrap_or_else(|e| panic!("failed to create {dir:?}: {e}"));
-
+pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (Statement, Witness) {
     let mut digest = [0u8; 16];
     boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut digest);
 
@@ -668,55 +503,26 @@ pub fn export_prover(dir: &Path, cut: usize, boundary: &mut ProverBoundary, crs:
     v1_coeffs.extend(c1_coeffs);
 
     let vectors = vec![
-        VectorRecord { n: specs[0].n, betasq: v0_betasq, role: specs[0].role, flags: specs[0].flags },
-        VectorRecord { n: specs[1].n, betasq: v1_betasq, role: specs[1].role, flags: specs[1].flags },
+        VectorDesc { n: specs[0].n, betasq: v0_betasq, role: specs[0].role, flags: specs[0].flags },
+        VectorDesc { n: specs[1].n, betasq: v1_betasq, role: specs[1].role, flags: specs[1].flags },
     ];
-    let witness_vectors = vec![
-        WitnessVector { n: specs[0].n, coeffs: v0_coeffs },
-        WitnessVector { n: specs[1].n, coeffs: v1_coeffs },
-    ];
+    let witness = Witness { vectors: vec![v0_coeffs, v1_coeffs] };
 
     assert!(v0_betasq as u128 <= betasq_inner_total as u128, "B0 exceeds betasq_inner_total");
     assert!(v0_betasq as u128 + v1_betasq as u128 <= betasq_w_total as u128, "B0+B1 exceeds betasq_w_total");
 
-    let header = StatementHeader { q: MOD_Q, digest, betasq_w_total, betasq_inner_total };
-    let stmt_path = dir.join("statement.bin");
-    let wit_path = dir.join("witness.bin");
-    write_statement(&stmt_path, &header, &vectors, &constraints);
-    write_witness(&wit_path, MOD_Q, &witness_vectors);
+    let stmt = Statement { q: MOD_Q, digest, betasq_w_total, betasq_inner_total, vectors, constraints };
 
-    self_check(&stmt_path, &wit_path);
-
+    self_check(&stmt, &witness).expect("EXPORT SELF-CHECK failed");
     println!("EXPORT SELF-CHECK OK");
+
+    (stmt, witness)
 }
 
-fn self_check(stmt_path: &Path, wit_path: &Path) {
-    let stmt = read_statement(stmt_path);
-    let (wq, wit) = read_witness(wit_path);
-    assert_eq!(stmt.q, wq, "statement/witness modulus mismatch");
-    assert_eq!(stmt.vectors.len(), wit.len(), "statement/witness vector count mismatch");
-
-    let mut role0_sum: u128 = 0;
-    let mut inner_sum: u128 = 0;
-    for (i, (v, wv)) in stmt.vectors.iter().zip(wit.iter()).enumerate() {
-        assert_eq!(v.n, wv.n, "vector {i}: rank mismatch");
-        assert_eq!(wv.coeffs.len(), wv.n * 64);
-        let mut sum: u128 = 0;
-        for &c in &wv.coeffs {
-            assert!(c.abs() <= 23170, "vector {i}: |coeff| = {} exceeds 23170", c.abs());
-            sum += (c as i128 * c as i128) as u128;
-        }
-        assert!(sum as u64 <= v.betasq, "vector {i}: recomputed betasq {sum} exceeds claimed {}", v.betasq);
-        if v.role == ROLE_W {
-            role0_sum += v.betasq as u128;
-            if v.flags & INNER_FLAG != 0 {
-                inner_sum += v.betasq as u128;
-            }
-        }
+fn self_check(stmt: &Statement, wit: &Witness) -> Result<(), String> {
+    if stmt.vectors.len() != wit.vectors.len() {
+        return Err("statement/witness vector count mismatch".into());
     }
-    assert!(role0_sum <= stmt.betasq_w_total as u128, "sum betasq (role 0) exceeds betasq_w_total");
-    assert!(inner_sum <= stmt.betasq_inner_total as u128, "sum betasq (INNER) exceeds betasq_inner_total");
-
     for (ci, c) in stmt.constraints.iter().enumerate() {
         let mut acc = r64::zero();
         let mut phi_pos = 0usize;
@@ -724,10 +530,12 @@ fn self_check(stmt_path: &Path, wit_path: &Path) {
             let vi = c.idx[j];
             let boff = c.off[j];
             let blen = c.len[j];
-            assert!(boff + blen <= stmt.vectors[vi].n, "constraint {ci}: block exceeds vector {vi} rank");
+            if boff + blen > stmt.vectors[vi].n {
+                return Err(format!("constraint {ci}: block exceeds vector {vi} rank"));
+            }
             let phi_slice = &c.phi[phi_pos..phi_pos + blen];
             phi_pos += blen;
-            let s: Vec<r64::R64> = wit[vi].coeffs[boff * 64..(boff + blen) * 64]
+            let s: Vec<r64::R64> = wit.vectors[vi][boff * 64..(boff + blen) * 64]
                 .chunks_exact(64)
                 .map(|ch| {
                     let mut a = r64::zero();
@@ -740,11 +548,14 @@ fn self_check(stmt_path: &Path, wit_path: &Path) {
             acc = r64::add(&acc, &r64::dot(phi_slice, &s));
         }
         let target = c.b.unwrap_or_else(r64::zero);
-        assert_eq!(acc, target, "constraint {ci}: LHS != b");
+        if acc != target {
+            return Err(format!("constraint {ci}: LHS != b"));
+        }
     }
+    Ok(())
 }
 
-pub fn export_verifier(dir: &Path, cut: usize, boundary: &mut VerifierBoundary, crs: &VerifierCRS) {
+pub fn export_verifier(cut: usize, boundary: &mut VerifierBoundary, crs: &VerifierCRS, prover_betasq: &[u64]) -> Statement {
     let mut digest = [0u8; 16];
     boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut digest);
 
@@ -778,47 +589,11 @@ pub fn export_verifier(dir: &Path, cut: usize, boundary: &mut VerifierBoundary, 
     let betasq_w_total = (round_cfg.norm_bound.powi(2).floor() as u128 + caps(&shape, a2_cfg.decomposition_base_log, a3_base_log, &layout)) as u64;
     let betasq_inner_total = round_cfg.most_inner_norm_bound.powi(2).floor() as u64;
 
-    let prover_stmt = read_statement(&dir.join("statement.bin"));
-    assert_eq!(prover_stmt.vectors.len(), 2, "verifier-derived vector count differs from prover statement.bin");
+    assert_eq!(prover_betasq.len(), 2, "verifier-derived vector count differs from the transmitted betasq claims");
+    let vectors = vec![
+        VectorDesc { n: specs[0].n, betasq: prover_betasq[0], role: specs[0].role, flags: specs[0].flags },
+        VectorDesc { n: specs[1].n, betasq: prover_betasq[1], role: specs[1].role, flags: specs[1].flags },
+    ];
 
-    let mut role0_sum: u128 = 0;
-    let mut inner_sum: u128 = 0;
-    let mut vectors = Vec::with_capacity(2);
-    for i in 0..2 {
-        let spec = &specs[i];
-        let pv = &prover_stmt.vectors[i];
-        assert_eq!(pv.n, spec.n, "vector {i}: n mismatch vs prover statement.bin");
-        assert_eq!(pv.role, spec.role, "vector {i}: role mismatch vs prover statement.bin");
-        assert_eq!(pv.flags, spec.flags, "vector {i}: flags mismatch vs prover statement.bin");
-        role0_sum += pv.betasq as u128;
-        if spec.flags & INNER_FLAG != 0 {
-            inner_sum += pv.betasq as u128;
-        }
-        vectors.push(VectorRecord { n: spec.n, betasq: pv.betasq, role: spec.role, flags: spec.flags });
-    }
-    assert!(inner_sum <= betasq_inner_total as u128, "verifier: B0 exceeds betasq_inner_total");
-    assert!(role0_sum <= betasq_w_total as u128, "verifier: B0+B1 exceeds betasq_w_total");
-
-    let header = StatementHeader { q: MOD_Q, digest, betasq_w_total, betasq_inner_total };
-    write_statement(&dir.join("statement.verifier.bin"), &header, &vectors, &constraints);
-}
-
-pub fn finalize(dir: &Path, truncated_kb: f64) {
-    println!("Truncated rokoko proof size: {truncated_kb} KB");
-    let a = std::fs::read(dir.join("statement.bin")).expect("missing statement.bin");
-    let b = std::fs::read(dir.join("statement.verifier.bin")).expect("missing statement.verifier.bin");
-    assert_eq!(a, b, "statement.bin != statement.verifier.bin");
-    println!("STATEMENT MATCH OK: statement.bin == statement.verifier.bin byte-for-byte ({} bytes)", a.len());
-}
-
-extern "C" {
-    fn rokoblador_run(statement_path: *const std::ffi::c_char, witness_path: *const std::ffi::c_char, pack_kb_out: *mut f64) -> i32;
-}
-
-pub fn run_labrador(stmt_path: &Path, wit_path: &Path) -> (i32, f64) {
-    let stmt = std::ffi::CString::new(stmt_path.to_str().expect("non-utf8 export path")).expect("nul byte in export path");
-    let wit = std::ffi::CString::new(wit_path.to_str().expect("non-utf8 export path")).expect("nul byte in export path");
-    let mut pack_kb: f64 = 0.0;
-    let ret = unsafe { rokoblador_run(stmt.as_ptr(), wit.as_ptr(), &mut pack_kb) };
-    (ret, pack_kb)
+    Statement { q: MOD_Q, digest, betasq_w_total, betasq_inner_total, vectors, constraints }
 }

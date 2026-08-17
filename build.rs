@@ -16,9 +16,9 @@ fn main() {
     assert!(status.success(), "make -C {labrador_dir} LOGQ=50 liblabrador.a failed");
     println!("cargo:rerun-if-changed={labrador_dir}");
 
-    let c_src = format!("{manifest_dir}/csrc/rokoblador.c");
-    let c_hdr = format!("{manifest_dir}/csrc/rokoblador.h");
-    let c_obj = out_dir.join("rokoblador.o");
+    let c_src = format!("{manifest_dir}/csrc/rb_adapter.c");
+    let c_hdr = format!("{manifest_dir}/csrc/rb_adapter.h");
+    let c_obj = out_dir.join("rb_adapter.o");
     let status = Command::new("gcc")
         .args([
             "-std=c2x",
@@ -37,8 +37,8 @@ fn main() {
         ])
         .arg(&c_obj)
         .status()
-        .expect("failed to invoke gcc for csrc/rokoblador.c");
-    assert!(status.success(), "gcc failed to compile csrc/rokoblador.c");
+        .expect("failed to invoke gcc for csrc/rb_adapter.c");
+    assert!(status.success(), "gcc failed to compile csrc/rb_adapter.c");
     println!("cargo:rerun-if-changed={c_src}");
     println!("cargo:rerun-if-changed={c_hdr}");
 
