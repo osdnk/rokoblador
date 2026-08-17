@@ -70,7 +70,7 @@ fn run(cut: usize) -> Result<(), String> {
     if verifier_stmt != stmt {
         return Err("STATEMENT MATCH FAILED: prover and verifier models differ".into());
     }
-    println!("STATEMENT MATCH OK (in-memory)");
+    println!("STATEMENT MATCH OK");
     let derive_s = t_derive.elapsed().as_secs_f64();
 
     let t_lab_verify = Instant::now();
