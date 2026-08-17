@@ -33,7 +33,7 @@ pub struct Constraint {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Statement {
     pub q: u64,
-    pub digest: [u8; 16],
+    pub digest: [u8; 32],
     pub betasq_w_total: u64,
     pub betasq_inner_total: u64,
     pub vectors: Vec<VectorDesc>,
@@ -476,20 +476,17 @@ fn encode_shape(buf: &mut Vec<u8>, q: u64, vectors: &[VectorDesc], betasq_w_tota
 }
 
 fn compute_digest(
-    transcript_xof16: &[u8; 16],
+    transcript_xof32: &[u8; 32],
     q: u64,
     vectors: &[VectorDesc],
     betasq_w_total: u64,
     betasq_inner_total: u64,
     constraints: &[Constraint],
-) -> [u8; 16] {
+) -> [u8; 32] {
     let mut buf = Vec::new();
-    buf.extend_from_slice(transcript_xof16);
+    buf.extend_from_slice(transcript_xof32);
     encode_shape(&mut buf, q, vectors, betasq_w_total, betasq_inner_total, constraints);
-    let hash = blake3::hash(&buf);
-    let mut digest = [0u8; 16];
-    digest.copy_from_slice(&hash.as_bytes()[..16]);
-    digest
+    *blake3::hash(&buf).as_bytes()
 }
 
 pub fn fingerprint(stmt: &Statement, wit: &Witness) -> [u8; 32] {
@@ -519,8 +516,8 @@ pub fn fingerprint(stmt: &Statement, wit: &Witness) -> [u8; 32] {
 }
 
 pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (Statement, Witness) {
-    let mut transcript_xof16 = [0u8; 16];
-    boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut transcript_xof16);
+    let mut transcript_xof32 = [0u8; 32];
+    boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut transcript_xof32);
 
     let nc = &boundary.config;
     let round_cfg = round_config(cut);
@@ -584,7 +581,7 @@ pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (S
     assert!(v0_betasq as u128 <= betasq_inner_total as u128, "B0 exceeds betasq_inner_total");
     assert!(v0_betasq as u128 + v1_betasq as u128 <= betasq_w_total as u128, "B0+B1 exceeds betasq_w_total");
 
-    let digest = compute_digest(&transcript_xof16, MOD_Q, &vectors, betasq_w_total, betasq_inner_total, &constraints);
+    let digest = compute_digest(&transcript_xof32, MOD_Q, &vectors, betasq_w_total, betasq_inner_total, &constraints);
     let stmt = Statement { q: MOD_Q, digest, betasq_w_total, betasq_inner_total, vectors, constraints };
 
     self_check(&stmt, &witness).expect("EXPORT SELF-CHECK failed");
@@ -630,8 +627,8 @@ fn self_check(stmt: &Statement, wit: &Witness) -> Result<(), String> {
 }
 
 pub fn export_verifier(cut: usize, boundary: &mut VerifierBoundary, crs: &VerifierCRS, prover_betasq: &[u64]) -> Statement {
-    let mut transcript_xof16 = [0u8; 16];
-    boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut transcript_xof16);
+    let mut transcript_xof32 = [0u8; 32];
+    boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut transcript_xof32);
 
     let nc = &boundary.config;
     let round_cfg = round_config(cut);
@@ -672,6 +669,6 @@ pub fn export_verifier(cut: usize, boundary: &mut VerifierBoundary, crs: &Verifi
         VectorDesc { n: specs[1].n, betasq: prover_betasq[1], role: specs[1].role, flags: specs[1].flags },
     ];
 
-    let digest = compute_digest(&transcript_xof16, MOD_Q, &vectors, betasq_w_total, betasq_inner_total, &constraints);
+    let digest = compute_digest(&transcript_xof32, MOD_Q, &vectors, betasq_w_total, betasq_inner_total, &constraints);
     Statement { q: MOD_Q, digest, betasq_w_total, betasq_inner_total, vectors, constraints }
 }
