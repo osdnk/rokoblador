@@ -18,6 +18,9 @@ fn hex(bytes: &[u8]) -> String {
 
 fn run(cut: usize, self_check_enabled: bool, fingerprint_enabled: bool) -> Result<(), String> {
     let cut_nz = NonZeroUsize::new(cut).ok_or("--cut must be nonzero")?;
+    if !(3..=5).contains(&cut) {
+        return Err("--cut must be in 3..=5: the round after the cut must still be a sumcheck round".into());
+    }
 
     init_common();
 

@@ -38,16 +38,16 @@ plus, for the cuts, statement translation and LaBRADOR proving:
 
 | | prover | verifier | proof |
 |---|---|---|---|
-| plain rokoko | 2.9 s | 0.007 s | 132.4 KB |
-| cut k=3 | 3.3 s | 0.54 s | 88.0 KB |
-| cut k=4 | 3.0 s | 0.28 s | 93.6 KB |
-| cut k=5 (default) | 2.8 s | 0.11 s | 99.2 KB |
-| cut k=6 | 2.8 s | 0.07 s | 108.0 KB |
+| plain rokoko | 2.9 s | 0.007 s | 102.7 KB |
+| cut k=3 | 3.3 s | 0.56 s | 88.2 KB |
+| cut k=4 | 3.0 s | 0.28 s | 93.9 KB |
+| cut k=5 (default) | 2.9 s | 0.12 s | 99.5 KB |
 
 Every row additionally pays the same witness commitment (~3.3 s) before
 proving; it is identical across all configurations and not counted above.
 
-`--cut K` (default 5) picks the round of the `rokoko` chain to cut at.
+`--cut K` (default 5) picks the round of the `rokoko` chain to cut at
+(3 to 5: the round after the cut must still be a sumcheck round).
 `--self-check` evaluates every constraint against the witness in reference
 R64 arithmetic before proving (off by default; the tamper/integration tests
 always run with it).
