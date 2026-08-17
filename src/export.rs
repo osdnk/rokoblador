@@ -515,7 +515,7 @@ pub fn fingerprint(stmt: &Statement, wit: &Witness) -> [u8; 32] {
     *blake3::hash(&buf).as_bytes()
 }
 
-pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (Statement, Witness) {
+pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS, self_check_enabled: bool) -> (Statement, Witness) {
     let mut transcript_xof32 = [0u8; 32];
     boundary.transcript.fill_from_xof(b"rokoblador-handoff", &mut transcript_xof32);
 
@@ -584,8 +584,10 @@ pub fn export_prover(cut: usize, boundary: &mut ProverBoundary, crs: &CRS) -> (S
     let digest = compute_digest(&transcript_xof32, MOD_Q, &vectors, betasq_w_total, betasq_inner_total, &constraints);
     let stmt = Statement { q: MOD_Q, digest, betasq_w_total, betasq_inner_total, vectors, constraints };
 
-    self_check(&stmt, &witness).expect("EXPORT SELF-CHECK failed");
-    println!("EXPORT SELF-CHECK OK");
+    if self_check_enabled {
+        self_check(&stmt, &witness).expect("EXPORT SELF-CHECK failed");
+        println!("EXPORT SELF-CHECK OK");
+    }
 
     (stmt, witness)
 }

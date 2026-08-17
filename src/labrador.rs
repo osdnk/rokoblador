@@ -231,8 +231,8 @@ fn build_raw_statement(stmt: &Statement) -> Result<RawStatement, String> {
     }
     unsafe { rb_smplstmnt_set_digest(raw.0, stmt.digest.as_ptr()) };
     for (ci, c) in stmt.constraints.iter().enumerate() {
-        let phi_flat: Vec<i64> = c.phi.iter().flatten().map(|&x| x as i64).collect();
-        let b_flat: Option<Vec<i64>> = c.b.map(|b| b.iter().map(|&x| x as i64).collect());
+        let phi_i64 = unsafe { std::slice::from_raw_parts(c.phi.as_ptr().cast::<i64>(), c.phi.len() * 64) };
+        let b_ptr = c.b.as_ref().map_or(std::ptr::null(), |b| b.as_ptr().cast::<i64>());
         unsafe {
             rb_smplstmnt_add_constraint(
                 raw.0,
@@ -241,8 +241,8 @@ fn build_raw_statement(stmt: &Statement) -> Result<RawStatement, String> {
                 c.idx.as_ptr(),
                 c.off.as_ptr(),
                 c.len.as_ptr(),
-                b_flat.as_ref().map_or(std::ptr::null(), |v| v.as_ptr()),
-                phi_flat.as_ptr(),
+                b_ptr,
+                phi_i64.as_ptr(),
             );
         }
     }

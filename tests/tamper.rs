@@ -9,7 +9,7 @@ fn build_models() -> (export::Statement, export::Witness) {
     labrador::ensure_comkey(precomputed_len);
     let mut setup = driver::setup();
     let mut prove_output = driver::prove(&mut setup, cut);
-    export::export_prover(3, &mut prove_output.prover_boundary, setup.crs())
+    export::export_prover(3, &mut prove_output.prover_boundary, setup.crs(), true)
 }
 
 fn find_last_w_block(stmt: &export::Statement) -> (usize, usize) {

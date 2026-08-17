@@ -8,7 +8,7 @@ use rokoblador::proof::CombinedProof;
 use rokoblador::{driver, export, labrador};
 
 fn usage() -> ! {
-    eprintln!("usage: rokoblador [--cut K]");
+    eprintln!("usage: rokoblador [--cut K] [--self-check] [--fingerprint]");
     std::process::exit(2);
 }
 
@@ -16,7 +16,7 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn run(cut: usize) -> Result<(), String> {
+fn run(cut: usize, self_check_enabled: bool, fingerprint_enabled: bool) -> Result<(), String> {
     let cut_nz = NonZeroUsize::new(cut).ok_or("--cut must be nonzero")?;
 
     init_common();
@@ -40,7 +40,7 @@ fn run(cut: usize) -> Result<(), String> {
     let rokoko_prove_s = t_prove.elapsed().as_secs_f64();
 
     let t_export = Instant::now();
-    let (stmt, wit) = export::export_prover(cut, &mut prove_output.prover_boundary, setup.crs());
+    let (stmt, wit) = export::export_prover(cut, &mut prove_output.prover_boundary, setup.crs(), self_check_enabled);
     let export_s = t_export.elapsed().as_secs_f64();
 
     let truncated_kb = to_kb(prove_output.handoff.proof.size_in_bits());
@@ -52,7 +52,9 @@ fn run(cut: usize) -> Result<(), String> {
     println!("PROVE phase: rokoko {rokoko_prove_s:.3} s + export {export_s:.3} s + labrador {lab_prove_s:.3} s");
     println!("Truncated rokoko proof size: {truncated_kb} KB");
     println!("COMBINED proof size: {truncated_kb} + {pack_kb} = {} KB", truncated_kb + pack_kb);
-    println!("MODEL FINGERPRINT: {}", hex(&export::fingerprint(&stmt, &wit)));
+    if fingerprint_enabled {
+        println!("MODEL FINGERPRINT: {}", hex(&export::fingerprint(&stmt, &wit)));
+    }
 
     let per_vector_betasq: Vec<u64> = stmt.vectors.iter().map(|v| v.betasq).collect();
     let combined = CombinedProof {
@@ -89,7 +91,9 @@ fn run(cut: usize) -> Result<(), String> {
 fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let mut cut: usize = 4;
+    let mut cut: usize = 5;
+    let mut self_check_enabled = false;
+    let mut fingerprint_enabled = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -97,10 +101,12 @@ fn main() -> Result<(), String> {
                 i += 1;
                 cut = args.get(i).unwrap_or_else(|| usage()).parse().unwrap_or_else(|_| usage());
             }
+            "--self-check" => self_check_enabled = true,
+            "--fingerprint" => fingerprint_enabled = true,
             _ => usage(),
         }
         i += 1;
     }
 
-    run(cut)
+    run(cut, self_check_enabled, fingerprint_enabled)
 }

@@ -33,4 +33,8 @@ be rejected):
 
     cargo +nightly test --release --test tamper
 
-`--cut K` (default 4) picks the round of the `rokoko` chain to cut at.
+`--cut K` (default 5) picks the round of the `rokoko` chain to cut at.
+`--self-check` re-enables the R64 reference re-evaluation of every
+constraint (off by default; the tamper/integration tests always run with it).
+`--fingerprint` prints a blake3 fingerprint of the whole statement and
+witness, for cross-run determinism checks (off by default).
