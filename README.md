@@ -33,19 +33,16 @@ be rejected):
 
     cargo +nightly test --release --test tamper
 
-Measured on an i7-11850H (default parameters; prover overhead = export +
-LaBRADOR proving, i.e. the cost beyond running `rokoko` alone to round k;
-verifier = the full verify phase):
+Measured on an i7-11850H, default parameters (prover includes witness
+sampling, commitment, and all proving on both sides; run-to-run noise ~0.2 s):
 
-| cut k | proof (KB) | rokoko + pack | prover overhead | verifier |
-|---|---|---|---|---|
-| 3 | 90.7 | 19.2 + 71.5 | 0.73 s | 0.54 s |
-| 4 | 97.1 | 27.2 + 70.0 | 0.34 s | 0.28 s |
-| 5 (default) | 103.6 | 35.9 + 67.8 | 0.16 s | 0.11 s |
-| 6 | 113.0 | 46.7 + 66.3 | 0.09 s | 0.07 s |
-
-A full 9-round `rokoko` run proves the same statement at 157.3 KB with a
-~7 ms verifier.
+| | prover | verifier | proof |
+|---|---|---|---|
+| plain rokoko | ~10.0 s | 0.007 s | 157.3 KB |
+| cut k=3 | 10.3 s | 0.54 s | 90.7 KB |
+| cut k=4 | 10.0 s | 0.28 s | 97.1 KB |
+| cut k=5 (default) | 9.8 s | 0.11 s | 103.6 KB |
+| cut k=6 | 9.9 s | 0.07 s | 113.0 KB |
 
 `--cut K` (default 5) picks the round of the `rokoko` chain to cut at.
 `--self-check` re-enables the R64 reference re-evaluation of every
