@@ -8,7 +8,9 @@ fn build_models() -> (export::Statement, export::Witness) {
     let precomputed_len = labrador::precomputed_len_for_rank(export::estimate_total_rank(3));
     labrador::ensure_comkey(precomputed_len);
     let mut setup = driver::setup();
-    let mut prove_output = driver::prove(&mut setup, cut);
+    let witness_decomposed = driver::sample();
+    let (commitment_with_aux, rc_commitment) = driver::commit_witness(&setup, &witness_decomposed);
+    let mut prove_output = driver::prove(&mut setup, &witness_decomposed, &commitment_with_aux, rc_commitment, cut);
     export::export_prover(3, &mut prove_output.prover_boundary, setup.crs(), true)
 }
 
