@@ -1,0 +1,14 @@
+[package]
+name = "rokoblador"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rokoko = { path = "../rokoko" }
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = "fat"
+codegen-units = 1
+panic = "abort"
